@@ -1,4 +1,8 @@
+use aes_gcm::aead::{Aead, KeyInit, OsRng}; // Traits for encryption
+use aes_gcm::{AeadCore, Aes256Gcm, Key, Nonce}; // AES-GCM encryption
 use clap::{Arg, ArgAction, Command};
+use std::fs;
+// use std::path::Path;
 
 fn main() {
     let matches = Command::new("Secure CLI")
@@ -62,22 +66,110 @@ fn main() {
         .get_matches();
 
     match matches.subcommand() {
+        // trial 1
+        // Some(("encrypt", sub_matches)) => {
+        //     // let input = sub_matches.get_one::<String>("input").unwrap();
+        //     // let output = sub_matches.get_one::<String>("output");
+        //     // println!("Encrypting file: {}", input);
+        //     let input = sub_matches.get_one::<String>("input").unwrap();
+        //     let output = sub_matches
+        //         .get_one::<String>("output")
+        //         .unwrap_or(&format!("{}.enc", input));
+        //     let key = [0u8; 32]; // Use a placeholder key for now
+
+        //     match encrypt_file(input, output, &key) {
+        //         Ok(_) => println!("File encrypted successfully: {}", output),
+        //         Err(e) => eprintln!("Error encrypting file: {}", e),
+        //     }
+        // }
+        // Some(("decrypt", sub_matches)) => {
+        //     let input = sub_matches.get_one::<String>("input").unwrap();
+        //     let output = sub_matches
+        //         .get_one::<String>("output")
+        //         .unwrap_or(&format!("{}.dec", input));
+        //     let key = [0u8; 32]; // Use a placeholder key for now
+
+        //     match decrypt_file(input, output, &key) {
+        //         Ok(_) => println!("File decrypted successfully: {}", output),
+        //         Err(e) => eprintln!("Error decrypting file: {}", e),
+        //     }
+        // }
+        
+        // trial 2
+        // Some(("encrypt", sub_matches)) => {
+        //     let input = sub_matches.get_one::<String>("input").unwrap();
+            
+        //     // Create a binding for the output file name
+        //     let output = sub_matches
+        //         .get_one::<String>("output")
+        //         .map(|s| s.as_str()) // Borrow the string from matches
+        //         .unwrap_or_else(|| {
+        //             let formatted = format!("{}.enc", input); // Create a temporary string
+        //             formatted.as_str() // Return a reference to the temporary
+        //         });
+            
+        //     let key = [0u8; 32]; // Use a placeholder key for now
+        
+        //     match encrypt_file(input, output, &key) {
+        //         Ok(_) => println!("File encrypted successfully: {}", output),
+        //         Err(e) => eprintln!("Error encrypting file: {}", e),
+        //     }
+        // }
+        // Some(("decrypt", sub_matches)) => {
+        //     let input = sub_matches.get_one::<String>("input").unwrap();
+        
+        //     // Create a binding for the output file name
+        //     let output = sub_matches
+        //         .get_one::<String>("output")
+        //         .map(|s| s.as_str())
+        //         .unwrap_or_else(|| {
+        //             let formatted = format!("{}.dec", input); // Create a temporary string
+        //             formatted.as_str() // Return a reference to the temporary
+        //         });
+        
+        //     let key = [0u8; 32]; // Use a placeholder key for now
+        
+        //     match decrypt_file(input, output, &key) {
+        //         Ok(_) => println!("File decrypted successfully: {}", output),
+        //         Err(e) => eprintln!("Error decrypting file: {}", e),
+        //     }
+        // }
+
+        // trial 3
         Some(("encrypt", sub_matches)) => {
             let input = sub_matches.get_one::<String>("input").unwrap();
-            let output = sub_matches.get_one::<String>("output");
-            println!("Encrypting file: {}", input);
-            if let Some(output) = output {
-                println!("Output file: {}", output);
+        
+            // Create a binding for the output file name
+            let output = sub_matches
+                .get_one::<String>("output")
+                .map(|s| s.to_owned()) // Clone the output string if provided
+                .unwrap_or_else(|| format!("{}.enc", input)); // Use format directly
+        
+            let key = [0u8; 32]; // Use a placeholder key for now
+        
+            match encrypt_file(input, &output, &key) {
+                Ok(_) => println!("File encrypted successfully: {}", output),
+                Err(e) => eprintln!("Error encrypting file: {}", e),
             }
         }
         Some(("decrypt", sub_matches)) => {
             let input = sub_matches.get_one::<String>("input").unwrap();
-            let output = sub_matches.get_one::<String>("output");
-            println!("Decrypting file: {}", input);
-            if let Some(output) = output {
-                println!("Output file: {}", output);
+        
+            // Create a binding for the output file name
+            let output = sub_matches
+                .get_one::<String>("output")
+                .map(|s| s.to_owned()) // Clone the output string if provided
+                .unwrap_or_else(|| format!("{}.dec", input)); // Use format directly
+        
+            let key = [0u8; 32]; // Use a placeholder key for now
+        
+            match decrypt_file(input, &output, &key) {
+                Ok(_) => println!("File decrypted successfully: {}", output),
+                Err(e) => eprintln!("Error decrypting file: {}", e),
             }
         }
+        
+        
         Some(("show", sub_matches)) => {
             let input = sub_matches.get_one::<String>("input").unwrap();
             println!("Showing metadata for file: {}", input);
@@ -86,4 +178,57 @@ fn main() {
             eprintln!("Please specify a valid command (encrypt, decrypt, show).");
         }
     }
+}
+
+fn encrypt_file(
+    input_path: &str,
+    output_path: &str,
+    key: &[u8],
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Read the input file
+    let plaintext = fs::read(input_path)?;
+
+    // Generate a random nonce
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96-bit unique nonce
+
+    // Initialize the cipher with the provided key
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+
+    // Encrypt the file content
+    let ciphertext = cipher
+        .encrypt(&nonce, plaintext.as_ref())
+        .map_err(|_| "Encryption failed")?;
+
+    // Write nonce + ciphertext to the output file
+    let mut output_data = Vec::new();
+    output_data.extend_from_slice(&nonce); // Store nonce at the beginning
+    output_data.extend_from_slice(&ciphertext);
+    fs::write(output_path, output_data)?;
+
+    Ok(())
+}
+
+fn decrypt_file(
+    input_path: &str,
+    output_path: &str,
+    key: &[u8],
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Read the input file
+    let encrypted_data = fs::read(input_path)?;
+
+    // Split the nonce and ciphertext
+    let (nonce, ciphertext) = encrypted_data.split_at(12); // 96-bit nonce
+
+    // Initialize the cipher with the provided key
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+
+    // Decrypt the file content
+    let plaintext = cipher
+        .decrypt(Nonce::from_slice(nonce), ciphertext)
+        .map_err(|_| "Decryption failed")?;
+
+    // Write the decrypted content to the output file
+    fs::write(output_path, plaintext)?;
+
+    Ok(())
 }
