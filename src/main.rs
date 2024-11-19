@@ -3,25 +3,28 @@ use aes_gcm::{AeadCore, Aes256Gcm, Key, Nonce}; // AES-GCM encryption
 use clap::{Arg, ArgAction, Command};
 use std::fs;
 // use std::path::Path;
-use argon2::{Argon2, PasswordHasher};
 use argon2::password_hash::SaltString;
+use argon2::{Argon2, PasswordHasher};
 use rand::rngs::OsRng; // For secure random salt generation
 use rpassword::prompt_password;
 
-fn derive_key(passphrase: &str, salt: Option<&str>) -> Result<[u8; 32], Box<dyn std::error::Error>> {
-    let salt = match salt {
-        Some(s) => SaltString::from_b64(s).map_err(|e| {
-            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string()))
-        })?,
-        None => SaltString::generate(&mut OsRng),
-    };
+fn derive_key(passphrase: &str, salt: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+    let salt = SaltString::from_b64(salt.trim_end_matches('=')).map_err(|e| {
+        Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            e.to_string(),
+        ))
+    })?;
 
     let argon2 = Argon2::default();
 
     let hash = argon2
         .hash_password(passphrase.as_bytes(), &salt)
         .map_err(|e| {
-            Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
         })?;
 
     let hash_bytes = hash.hash.ok_or_else(|| {
@@ -33,8 +36,6 @@ fn derive_key(passphrase: &str, salt: Option<&str>) -> Result<[u8; 32], Box<dyn 
 
     let mut key = [0u8; 32];
     key.copy_from_slice(&hash_bytes.as_bytes()[..32]);
-
-    println!("Derived Key: {:?}", key);
 
     Ok(key)
 }
@@ -103,50 +104,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match matches.subcommand() {
         Some(("encrypt", sub_matches)) => {
             let input = sub_matches.get_one::<String>("input").unwrap();
-        
-            // Create a binding for the output file name
             let output = sub_matches
                 .get_one::<String>("output")
-                .map(|s| s.to_owned()) // Clone the output string if provided
-                .unwrap_or_else(|| format!("{}.enc", input)); // Use format directly
-            
-            // Prompt for passphrase
+                .map(|s| s.to_owned())
+                .unwrap_or_else(|| format!("{}.enc", input));
             let passphrase = prompt_password("Enter passphrase: ").unwrap();
             let salt = SaltString::generate(&mut OsRng).to_string();
-            println!("Generated Salt: {}", salt);
+            let key = derive_key(&passphrase, &salt)?;
 
-            // Derive key
-            let key = derive_key(&passphrase, Some(&salt))?;
-
-            match encrypt_file(input, &output, &key) {
+            match encrypt_file(input, &output, &key, &salt) {
                 Ok(_) => println!("File encrypted successfully: {}", output),
                 Err(e) => eprintln!("Error encrypting file: {}", e),
             }
         }
         Some(("decrypt", sub_matches)) => {
             let input = sub_matches.get_one::<String>("input").unwrap();
-        
-            // Create a binding for the output file name
             let output = sub_matches
                 .get_one::<String>("output")
-                .map(|s| s.to_owned()) // Clone the output string if provided
-                .unwrap_or_else(|| format!("{}.dec", input)); // Use format directly
-        
-            // Prompt for passphrase
+                .map(|s| s.to_owned())
+                .unwrap_or_else(|| format!("{}.dec", input));
             let passphrase = prompt_password("Enter passphrase: ").unwrap();
-            
-            let salt = SaltString::generate(&mut OsRng).to_string();
-            println!("Generated Salt: {}", salt);
 
-            // Derive key
-            let key = derive_key(&passphrase, Some(&salt))?;
-
-            match decrypt_file(input, &output, &key) {
+            match decrypt_file(input, &output, &passphrase) {
                 Ok(_) => println!("File decrypted successfully: {}", output),
                 Err(e) => eprintln!("Error decrypting file: {}", e),
             }
         }
-        
         Some(("show", sub_matches)) => {
             let input = sub_matches.get_one::<String>("input").unwrap();
             println!("Showing metadata for file: {}", input);
@@ -163,25 +146,20 @@ fn encrypt_file(
     input_path: &str,
     output_path: &str,
     key: &[u8],
+    salt: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Read the input file
     let plaintext = fs::read(input_path)?;
-
-    // Generate a random nonce
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96-bit unique nonce
-
-    // Initialize the cipher with the provided key
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
-
-    // Encrypt the file content
     let ciphertext = cipher
         .encrypt(&nonce, plaintext.as_ref())
         .map_err(|_| "Encryption failed")?;
 
-    // Write nonce + ciphertext to the output file
     let mut output_data = Vec::new();
     output_data.extend_from_slice(&nonce); // Store nonce at the beginning
+    output_data.extend_from_slice(salt.trim_end_matches('=').as_bytes()); // Store salt without padding
     output_data.extend_from_slice(&ciphertext);
+
     fs::write(output_path, output_data)?;
 
     Ok(())
@@ -190,23 +168,21 @@ fn encrypt_file(
 fn decrypt_file(
     input_path: &str,
     output_path: &str,
-    key: &[u8],
+    passphrase: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Read the input file
+    let salt_len: usize = 22; // Length of base64 encoded salt without padding
     let encrypted_data = fs::read(input_path)?;
+    let (nonce, rest) = encrypted_data.split_at(12); // 96-bit nonce
+    let (salt, ciphertext) = rest.split_at(salt_len);
 
-    // Split the nonce and ciphertext
-    let (nonce, ciphertext) = encrypted_data.split_at(12); // 96-bit nonce
+    let salt_str = std::str::from_utf8(salt)?;
+    let key = derive_key(passphrase, salt_str)?;
 
-    // Initialize the cipher with the provided key
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
-
-    // Decrypt the file content
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
     let plaintext = cipher
         .decrypt(Nonce::from_slice(nonce), ciphertext)
         .map_err(|_| "Decryption failed")?;
 
-    // Write the decrypted content to the output file
     fs::write(output_path, plaintext)?;
 
     Ok(())

@@ -4,12 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-clap = "4.2"             # For CLI parsing
-aes-gcm = "0.10"         # For AES-GCM encryption
+clap = "4.2"              # For CLI parsing
+aes-gcm = "0.10"          # For AES-GCM encryption
 chacha20poly1305 = "0.10" # For ChaCha20 encryption
-rand = "0.8"             # Random number generation
-rand_chacha = "0.3"      # ChaCha20-based random generator
-rpassword = "7.1"        # Secure passphrase input
-argon2 = "0.5"         # Key Derivation
-tracing = "0.1"          # Debug and logging
-thiserror = "1.0"        # Error handling
+rand = "0.8"              # Random number generation
+rand_chacha = "0.3"       # ChaCha20-based random generator
+rpassword = "7.1"         # Secure passphrase input
+argon2 = "0.5"            # Key Derivation
+tracing = "0.1"           # Debug and logging
+thiserror = "1.0"         # Error handling
+base64 = "0.21"           # Use the latest version compatible with your Rust version
