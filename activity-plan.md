@@ -77,3 +77,12 @@ Given your tight deadline, here's an accelerated plan to complete the project by
 ---
 
 Let me know how you'd like to proceed or if you want detailed support for any step!
+
+# Test encryption command
+cargo run -- encrypt --input file.txt --output file.enc
+
+# Test decryption command
+cargo run -- decrypt --input file.enc --output file.txt
+
+# Test show command
+cargo run -- show --input file.enc

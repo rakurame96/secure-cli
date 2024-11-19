@@ -10,5 +10,6 @@ chacha20poly1305 = "0.10" # For ChaCha20 encryption
 rand = "0.8"             # Random number generation
 rand_chacha = "0.3"      # ChaCha20-based random generator
 rpassword = "7.1"        # Secure passphrase input
+argon2 = "0.5"         # Key Derivation
 tracing = "0.1"          # Debug and logging
 thiserror = "1.0"        # Error handling

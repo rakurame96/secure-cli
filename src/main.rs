@@ -1,10 +1,94 @@
-use aes_gcm::aead::{Aead, KeyInit, OsRng}; // Traits for encryption
+use aes_gcm::aead::{Aead, KeyInit}; // Traits for encryption
 use aes_gcm::{AeadCore, Aes256Gcm, Key, Nonce}; // AES-GCM encryption
 use clap::{Arg, ArgAction, Command};
 use std::fs;
 // use std::path::Path;
+use argon2::{Argon2, PasswordHasher};
+use argon2::password_hash::SaltString;
+use rand::rngs::OsRng; // For secure random salt generation
+use rpassword::prompt_password;
 
-fn main() {
+// fn derive_key_from_passphrase(passphrase: &str, salt: &[u8]) -> Vec<u8> {
+    // // Argon2 configuration
+    // let config = Config::default();
+    
+    // // Allocate a buffer to store the derived key (32 bytes for AES-256)
+    // let mut key = vec![0u8; 32];
+    
+    // // Derive the key using Argon2
+    // argon2::hash_raw(passphrase.as_bytes(), salt, &config)
+    //     .expect("Failed to derive key")
+    //     .copy_to(&mut key);
+
+    // key
+// }
+// fn derive_key(passphrase: &str, salt: Option<&str>) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+//     let salt = match salt {
+//         Some(s) => SaltString::from_b64(s).map_err(|e| Box::new(e.to_string()))?,
+//         None => SaltString::generate(&mut OsRng),
+//     };
+
+//     let argon2 = Argon2::default();
+
+//     let hash = argon2
+//         .hash_password(passphrase.as_bytes(), &salt)
+//         .map_err(|e| Box::new(e.to_string()))?;
+
+//     let key = hash.hash.ok_or("Failed to retrieve hash bytes")?;
+
+//     let mut key_bytes = [0u8; 32];
+//     key_bytes.copy_from_slice(&key.as_bytes()[..32]);
+//     Ok(key_bytes)
+// }
+
+// fn derive_key(passphrase: &str, salt: Option<&str>) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+//     let salt = match salt {
+//         Some(s) => SaltString::from_b64(s).map_err(|e| Box::new(e.to_string()))?,
+//         None => SaltString::generate(&mut OsRng),
+//     };
+
+//     let argon2 = Argon2::default();
+
+//     let hash = argon2
+//         .hash_password(passphrase.as_bytes(), &salt)
+//         .map_err(|e| Box::new(e.to_string()))?;
+
+//     let key = hash.hash.ok_or_else(|| "Failed to retrieve hash bytes".to_string())?;
+
+//     let mut key_bytes = [0u8; 32];
+//     key_bytes.copy_from_slice(&key.as_bytes()[..32]);
+//     Ok(key_bytes)
+// }
+
+fn derive_key(passphrase: &str, salt: Option<&str>) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+    let salt = match salt {
+        Some(s) => SaltString::from_b64(s).map_err(|e| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string()))
+        })?,
+        None => SaltString::generate(&mut OsRng),
+    };
+
+    let argon2 = Argon2::default();
+
+    let hash = argon2
+        .hash_password(passphrase.as_bytes(), &salt)
+        .map_err(|e| {
+            Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+        })?;
+
+    let hash_bytes = hash.hash.ok_or_else(|| {
+        Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Failed to retrieve hash bytes",
+        ))
+    })?;
+
+    let mut key = [0u8; 32];
+    key.copy_from_slice(&hash_bytes.as_bytes()[..32]);
+    Ok(key)
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let matches = Command::new("Secure CLI")
         .version("0.1.0")
         .about("File Encryption and Decryption Tool")
@@ -145,8 +229,22 @@ fn main() {
                 .map(|s| s.to_owned()) // Clone the output string if provided
                 .unwrap_or_else(|| format!("{}.enc", input)); // Use format directly
         
-            let key = [0u8; 32]; // Use a placeholder key for now
-        
+            // let key = [0u8; 32]; // Use a placeholder key for now
+            
+            // Prompt for passphrase
+            let passphrase = prompt_password("Enter passphrase: ").unwrap();
+            // let salt = b"fixed-salt-for-now"; // Use a fixed salt for simplicity
+            let salt = SaltString::generate(&mut OsRng).to_string();
+            println!("Generated Salt: {}", salt);
+
+            // let salt_str = std::str::from_utf8(salt).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+            // let salt_str = std::str::from_utf8(salt).map_err(|e| Box::new(e.to_string()))?;
+            // let salt_str = std::str::from_utf8(&salt).map_err(|e| {
+            //     Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string()))
+            // })?;
+            // Derive key
+            let key = derive_key(&passphrase, Some(&salt))?;
+
             match encrypt_file(input, &output, &key) {
                 Ok(_) => println!("File encrypted successfully: {}", output),
                 Err(e) => eprintln!("Error encrypting file: {}", e),
@@ -161,8 +259,22 @@ fn main() {
                 .map(|s| s.to_owned()) // Clone the output string if provided
                 .unwrap_or_else(|| format!("{}.dec", input)); // Use format directly
         
-            let key = [0u8; 32]; // Use a placeholder key for now
+            // let key = [0u8; 32]; // Use a placeholder key for now
         
+            // Prompt for passphrase
+            let passphrase = prompt_password("Enter passphrase: ").unwrap();
+            // let salt = b"fixed-salt-for-now"; // Use the same fixed salt for decryption
+            
+            let salt = SaltString::generate(&mut OsRng).to_string();
+            println!("Generated Salt: {}", salt);
+
+            // let salt_str = std::str::from_utf8(salt).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+            // let salt_str = std::str::from_utf8(salt).map_err(|e| {
+            //     Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string()))
+            // })?;
+            // Derive key
+            let key = derive_key(&passphrase, Some(&salt))?;
+
             match decrypt_file(input, &output, &key) {
                 Ok(_) => println!("File decrypted successfully: {}", output),
                 Err(e) => eprintln!("Error decrypting file: {}", e),
@@ -178,6 +290,8 @@ fn main() {
             eprintln!("Please specify a valid command (encrypt, decrypt, show).");
         }
     }
+
+    Ok(())
 }
 
 fn encrypt_file(
