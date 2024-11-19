@@ -8,58 +8,6 @@ use argon2::password_hash::SaltString;
 use rand::rngs::OsRng; // For secure random salt generation
 use rpassword::prompt_password;
 
-// fn derive_key_from_passphrase(passphrase: &str, salt: &[u8]) -> Vec<u8> {
-    // // Argon2 configuration
-    // let config = Config::default();
-    
-    // // Allocate a buffer to store the derived key (32 bytes for AES-256)
-    // let mut key = vec![0u8; 32];
-    
-    // // Derive the key using Argon2
-    // argon2::hash_raw(passphrase.as_bytes(), salt, &config)
-    //     .expect("Failed to derive key")
-    //     .copy_to(&mut key);
-
-    // key
-// }
-// fn derive_key(passphrase: &str, salt: Option<&str>) -> Result<[u8; 32], Box<dyn std::error::Error>> {
-//     let salt = match salt {
-//         Some(s) => SaltString::from_b64(s).map_err(|e| Box::new(e.to_string()))?,
-//         None => SaltString::generate(&mut OsRng),
-//     };
-
-//     let argon2 = Argon2::default();
-
-//     let hash = argon2
-//         .hash_password(passphrase.as_bytes(), &salt)
-//         .map_err(|e| Box::new(e.to_string()))?;
-
-//     let key = hash.hash.ok_or("Failed to retrieve hash bytes")?;
-
-//     let mut key_bytes = [0u8; 32];
-//     key_bytes.copy_from_slice(&key.as_bytes()[..32]);
-//     Ok(key_bytes)
-// }
-
-// fn derive_key(passphrase: &str, salt: Option<&str>) -> Result<[u8; 32], Box<dyn std::error::Error>> {
-//     let salt = match salt {
-//         Some(s) => SaltString::from_b64(s).map_err(|e| Box::new(e.to_string()))?,
-//         None => SaltString::generate(&mut OsRng),
-//     };
-
-//     let argon2 = Argon2::default();
-
-//     let hash = argon2
-//         .hash_password(passphrase.as_bytes(), &salt)
-//         .map_err(|e| Box::new(e.to_string()))?;
-
-//     let key = hash.hash.ok_or_else(|| "Failed to retrieve hash bytes".to_string())?;
-
-//     let mut key_bytes = [0u8; 32];
-//     key_bytes.copy_from_slice(&key.as_bytes()[..32]);
-//     Ok(key_bytes)
-// }
-
 fn derive_key(passphrase: &str, salt: Option<&str>) -> Result<[u8; 32], Box<dyn std::error::Error>> {
     let salt = match salt {
         Some(s) => SaltString::from_b64(s).map_err(|e| {
@@ -85,6 +33,9 @@ fn derive_key(passphrase: &str, salt: Option<&str>) -> Result<[u8; 32], Box<dyn 
 
     let mut key = [0u8; 32];
     key.copy_from_slice(&hash_bytes.as_bytes()[..32]);
+
+    println!("Derived Key: {:?}", key);
+
     Ok(key)
 }
 
@@ -150,76 +101,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .get_matches();
 
     match matches.subcommand() {
-        // trial 1
-        // Some(("encrypt", sub_matches)) => {
-        //     // let input = sub_matches.get_one::<String>("input").unwrap();
-        //     // let output = sub_matches.get_one::<String>("output");
-        //     // println!("Encrypting file: {}", input);
-        //     let input = sub_matches.get_one::<String>("input").unwrap();
-        //     let output = sub_matches
-        //         .get_one::<String>("output")
-        //         .unwrap_or(&format!("{}.enc", input));
-        //     let key = [0u8; 32]; // Use a placeholder key for now
-
-        //     match encrypt_file(input, output, &key) {
-        //         Ok(_) => println!("File encrypted successfully: {}", output),
-        //         Err(e) => eprintln!("Error encrypting file: {}", e),
-        //     }
-        // }
-        // Some(("decrypt", sub_matches)) => {
-        //     let input = sub_matches.get_one::<String>("input").unwrap();
-        //     let output = sub_matches
-        //         .get_one::<String>("output")
-        //         .unwrap_or(&format!("{}.dec", input));
-        //     let key = [0u8; 32]; // Use a placeholder key for now
-
-        //     match decrypt_file(input, output, &key) {
-        //         Ok(_) => println!("File decrypted successfully: {}", output),
-        //         Err(e) => eprintln!("Error decrypting file: {}", e),
-        //     }
-        // }
-        
-        // trial 2
-        // Some(("encrypt", sub_matches)) => {
-        //     let input = sub_matches.get_one::<String>("input").unwrap();
-            
-        //     // Create a binding for the output file name
-        //     let output = sub_matches
-        //         .get_one::<String>("output")
-        //         .map(|s| s.as_str()) // Borrow the string from matches
-        //         .unwrap_or_else(|| {
-        //             let formatted = format!("{}.enc", input); // Create a temporary string
-        //             formatted.as_str() // Return a reference to the temporary
-        //         });
-            
-        //     let key = [0u8; 32]; // Use a placeholder key for now
-        
-        //     match encrypt_file(input, output, &key) {
-        //         Ok(_) => println!("File encrypted successfully: {}", output),
-        //         Err(e) => eprintln!("Error encrypting file: {}", e),
-        //     }
-        // }
-        // Some(("decrypt", sub_matches)) => {
-        //     let input = sub_matches.get_one::<String>("input").unwrap();
-        
-        //     // Create a binding for the output file name
-        //     let output = sub_matches
-        //         .get_one::<String>("output")
-        //         .map(|s| s.as_str())
-        //         .unwrap_or_else(|| {
-        //             let formatted = format!("{}.dec", input); // Create a temporary string
-        //             formatted.as_str() // Return a reference to the temporary
-        //         });
-        
-        //     let key = [0u8; 32]; // Use a placeholder key for now
-        
-        //     match decrypt_file(input, output, &key) {
-        //         Ok(_) => println!("File decrypted successfully: {}", output),
-        //         Err(e) => eprintln!("Error decrypting file: {}", e),
-        //     }
-        // }
-
-        // trial 3
         Some(("encrypt", sub_matches)) => {
             let input = sub_matches.get_one::<String>("input").unwrap();
         
@@ -228,20 +109,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .get_one::<String>("output")
                 .map(|s| s.to_owned()) // Clone the output string if provided
                 .unwrap_or_else(|| format!("{}.enc", input)); // Use format directly
-        
-            // let key = [0u8; 32]; // Use a placeholder key for now
             
             // Prompt for passphrase
             let passphrase = prompt_password("Enter passphrase: ").unwrap();
-            // let salt = b"fixed-salt-for-now"; // Use a fixed salt for simplicity
             let salt = SaltString::generate(&mut OsRng).to_string();
             println!("Generated Salt: {}", salt);
 
-            // let salt_str = std::str::from_utf8(salt).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-            // let salt_str = std::str::from_utf8(salt).map_err(|e| Box::new(e.to_string()))?;
-            // let salt_str = std::str::from_utf8(&salt).map_err(|e| {
-            //     Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string()))
-            // })?;
             // Derive key
             let key = derive_key(&passphrase, Some(&salt))?;
 
@@ -259,19 +132,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .map(|s| s.to_owned()) // Clone the output string if provided
                 .unwrap_or_else(|| format!("{}.dec", input)); // Use format directly
         
-            // let key = [0u8; 32]; // Use a placeholder key for now
-        
             // Prompt for passphrase
             let passphrase = prompt_password("Enter passphrase: ").unwrap();
-            // let salt = b"fixed-salt-for-now"; // Use the same fixed salt for decryption
             
             let salt = SaltString::generate(&mut OsRng).to_string();
             println!("Generated Salt: {}", salt);
 
-            // let salt_str = std::str::from_utf8(salt).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-            // let salt_str = std::str::from_utf8(salt).map_err(|e| {
-            //     Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, e.to_string()))
-            // })?;
             // Derive key
             let key = derive_key(&passphrase, Some(&salt))?;
 
@@ -280,7 +146,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Err(e) => eprintln!("Error decrypting file: {}", e),
             }
         }
-        
         
         Some(("show", sub_matches)) => {
             let input = sub_matches.get_one::<String>("input").unwrap();
