@@ -14,6 +14,10 @@ enum EncryptionAlgorithm {
 }
 
 fn derive_key(passphrase: &str, salt: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+    println!(
+        "Deriving key with passphrase: {} and salt: {}",
+        passphrase, salt
+    );
     let salt = SaltString::from_b64(salt.trim_end_matches('=')).map_err(|e| {
         Box::new(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -42,6 +46,7 @@ fn derive_key(passphrase: &str, salt: &str) -> Result<[u8; 32], Box<dyn std::err
     let mut key = [0u8; 32];
     key.copy_from_slice(&hash_bytes.as_bytes()[..32]);
 
+    println!("Derived key: {:?}", key);
     Ok(key)
 }
 
@@ -141,12 +146,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let input = sub_matches.get_one::<String>("input").unwrap();
+            println!("Encrypting file: {}", input);
             let output = sub_matches
                 .get_one::<String>("output")
                 .map(|s| s.to_owned())
                 .unwrap_or_else(|| format!("{}.enc", input));
+            println!("Output file: {}", output);
             let passphrase = prompt_password("Enter passphrase: ").unwrap();
             let salt = SaltString::generate(&mut OsRng).to_string();
+            println!("Generated salt: {}", salt);
             let key = derive_key(&passphrase, &salt)?;
 
             match encrypt_file(input, &output, &key, &salt, &algorithm) {
@@ -170,10 +178,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let input = sub_matches.get_one::<String>("input").unwrap();
+            println!("Decrypting file: {}", input);
             let output = sub_matches
                 .get_one::<String>("output")
                 .map(|s| s.to_owned())
                 .unwrap_or_else(|| format!("{}.dec", input));
+            println!("Output file: {}", output);
             let passphrase = prompt_password("Enter passphrase: ").unwrap();
 
             match decrypt_file(input, &output, &passphrase, &algorithm) {
@@ -201,12 +211,18 @@ fn encrypt_file(
     algorithm: &EncryptionAlgorithm,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let plaintext = fs::read(input_path)?;
+    println!(
+        "Read plaintext from {}: {:?}",
+        input_path,
+        &plaintext[..std::cmp::min(20, plaintext.len())]
+    ); // Print first 20 bytes
     let nonce = match algorithm {
         EncryptionAlgorithm::AES256GCM => Aes256Gcm::generate_nonce(&mut OsRng),
         EncryptionAlgorithm::ChaCha20Poly1305 => {
             chacha20poly1305::ChaCha20Poly1305::generate_nonce(&mut OsRng)
         }
     };
+    println!("Generated nonce: {:?}", nonce);
     let ciphertext = match algorithm {
         EncryptionAlgorithm::AES256GCM => {
             let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
@@ -223,13 +239,19 @@ fn encrypt_file(
                 .map_err(|_| "Encryption failed")?
         }
     };
+    println!(
+        "Encrypted ciphertext: {:?}",
+        &ciphertext[..std::cmp::min(20, ciphertext.len())]
+    ); // Print first 20 bytes
 
     let mut output_data = Vec::new();
     output_data.extend_from_slice(&nonce);
     output_data.extend_from_slice(salt.trim_end_matches('=').as_bytes());
     output_data.extend_from_slice(&ciphertext);
+    println!("Final output data length: {}", output_data.len());
 
     fs::write(output_path, output_data)?;
+    println!("Data written to file: {}", output_path);
 
     Ok(())
 }
@@ -241,12 +263,30 @@ fn decrypt_file(
     algorithm: &EncryptionAlgorithm,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let salt_len: usize = 22; // Length of base64 encoded salt without padding
+    println!("Decrypting file: {}", input_path);
+
     let encrypted_data = fs::read(input_path)?;
+    println!(
+        "Read encrypted data from {}: {:?}",
+        input_path,
+        &encrypted_data[..std::cmp::min(20, encrypted_data.len())]
+    ); // Print first 20 bytes
+
     let (nonce, rest) = encrypted_data.split_at(12); // 96-bit nonce
+    println!("Extracted nonce: {:?}", nonce);
+
     let (salt, ciphertext) = rest.split_at(salt_len);
+    println!(
+        "Extracted salt: {:?} and ciphertext length: {}",
+        salt,
+        ciphertext.len()
+    );
 
     let salt_str = std::str::from_utf8(salt)?;
+    println!("Salt string: {}", salt_str);
+
     let key = derive_key(passphrase, salt_str)?;
+    println!("Derived key: {:?}", key);
 
     let plaintext = match algorithm {
         EncryptionAlgorithm::AES256GCM => {
@@ -264,8 +304,13 @@ fn decrypt_file(
                 .map_err(|_| "Decryption failed")?
         }
     };
+    println!(
+        "Decrypted plaintext: {:?}",
+        &plaintext[..std::cmp::min(20, plaintext.len())]
+    ); // Print first 20 bytes
 
-    fs::write(output_path, plaintext)?;
+    fs::write(output_path, &plaintext)?;
+    println!("Decrypted data written to file: {}", output_path);
 
     Ok(())
 }
