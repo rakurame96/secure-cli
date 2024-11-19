@@ -14,3 +14,5 @@ argon2 = "0.5"            # Key Derivation
 tracing = "0.1"           # Debug and logging
 thiserror = "1.0"         # Error handling
 base64 = "0.21"           # Use the latest version compatible with your Rust version
+serde = { version = "1.0", features = ["derive"] } 
+serde_json = "1.0"

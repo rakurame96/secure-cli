@@ -6,7 +6,15 @@ use chacha20poly1305::ChaCha20Poly1305; // ChaCha20-Poly1305 encryption
 use clap::{Arg, ArgAction, Command};
 use rand::rngs::OsRng; // For secure random salt generation
 use rpassword::prompt_password;
+use serde::{Deserialize, Serialize};
 use std::fs;
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Metadata {
+    filename: String,
+    size: usize,
+    algorithm: String,
+}
 
 enum EncryptionAlgorithm {
     AES256GCM,
@@ -193,12 +201,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Some(("show", sub_matches)) => {
             let input = sub_matches.get_one::<String>("input").unwrap();
-            println!("Showing metadata for file: {}", input);
+            match show_metadata(input) {
+                Ok(_) => println!("Metadata displayed successfully."),
+                Err(e) => eprintln!("Error displaying metadata: {}", e),
+            }
         }
         _ => {
             eprintln!("Please specify a valid command (encrypt, decrypt, show).");
         }
     }
+
+    Ok(())
+}
+
+fn show_metadata(input_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let encrypted_data = fs::read(input_path)?;
+    let (_, rest) = encrypted_data.split_at(12 + 22); // Skip nonce and salt
+    let metadata_end = rest
+        .iter()
+        .position(|&b| b == 0)
+        .ok_or("Metadata not found")?;
+    let metadata_json = &rest[..metadata_end];
+
+    let metadata: Metadata = serde_json::from_slice(metadata_json)?;
+    println!("Metadata for {}: {:?}", input_path, metadata);
 
     Ok(())
 }
@@ -244,9 +270,24 @@ fn encrypt_file(
         &ciphertext[..std::cmp::min(20, ciphertext.len())]
     ); // Print first 20 bytes
 
+    let metadata = Metadata {
+        filename: String::from(input_path),
+        size: plaintext.len() as usize,
+        algorithm: match algorithm {
+            EncryptionAlgorithm::AES256GCM => "AES256GCM",
+            EncryptionAlgorithm::ChaCha20Poly1305 => "ChaCha20Poly1305",
+        }
+        .to_string(),
+    };
+
+    let metadata_json = serde_json::to_string(&metadata)?;
+    println!("Metadata JSON: {}", metadata_json);
+
     let mut output_data = Vec::new();
     output_data.extend_from_slice(&nonce);
     output_data.extend_from_slice(salt.trim_end_matches('=').as_bytes());
+    output_data.extend_from_slice(metadata_json.as_bytes());
+    output_data.push(0); // Null separator between metadata and ciphertext
     output_data.extend_from_slice(&ciphertext);
     println!("Final output data length: {}", output_data.len());
 
@@ -275,12 +316,20 @@ fn decrypt_file(
     let (nonce, rest) = encrypted_data.split_at(12); // 96-bit nonce
     println!("Extracted nonce: {:?}", nonce);
 
-    let (salt, ciphertext) = rest.split_at(salt_len);
+    let (salt, rest) = rest.split_at(salt_len);
+    println!("Extracted salt: {:?}", salt);
+
+    let metadata_end = rest
+        .iter()
+        .position(|&b| b == 0)
+        .ok_or("Metadata not found")?;
+    let metadata_json = &rest[..metadata_end];
+    let ciphertext = &rest[(metadata_end + 1)..]; // Skip null separator
+    println!("Extracted metadata JSON: {:?}", metadata_json);
     println!(
-        "Extracted salt: {:?} and ciphertext length: {}",
-        salt,
-        ciphertext.len()
-    );
+        "Extracted ciphertext: {:?}",
+        &ciphertext[..std::cmp::min(20, ciphertext.len())]
+    ); // Print first 20 bytes
 
     let salt_str = std::str::from_utf8(salt)?;
     println!("Salt string: {}", salt_str);

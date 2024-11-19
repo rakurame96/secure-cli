@@ -92,3 +92,6 @@ cargo run -- decrypt --input file.enc --output file.txt --algorithm ChaCha20Poly
 
 # Test show command
 cargo run -- show --input file.enc
+
+# Show metadata for an encrypted file 
+cargo run -- show --input encrypted_file.enc
