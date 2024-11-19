@@ -78,11 +78,17 @@ Given your tight deadline, here's an accelerated plan to complete the project by
 
 Let me know how you'd like to proceed or if you want detailed support for any step!
 
-# Test encryption command
+# Test encryption command (default AES256GCM)
 cargo run -- encrypt --input file.txt --output file.enc
 
-# Test decryption command
+# Test decryption command (default AES256GCM)
 cargo run -- decrypt --input file.enc --output file.txt
+
+# Test with different algorithm for Encryption (ChaCha20Poly1305)
+cargo run -- encrypt --input file.txt --output file.enc --algorithm ChaCha20Poly1305
+
+# Test with different algorithm for Encryption (ChaCha20Poly1305)
+cargo run -- decrypt --input file.enc --output file.txt --algorithm ChaCha20Poly1305
 
 # Test show command
 cargo run -- show --input file.enc

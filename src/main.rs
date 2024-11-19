@@ -1,12 +1,17 @@
 use aes_gcm::aead::{Aead, KeyInit}; // Traits for encryption
 use aes_gcm::{AeadCore, Aes256Gcm, Key, Nonce}; // AES-GCM encryption
-use clap::{Arg, ArgAction, Command};
-use std::fs;
-// use std::path::Path;
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHasher};
+use chacha20poly1305::ChaCha20Poly1305; // ChaCha20-Poly1305 encryption
+use clap::{Arg, ArgAction, Command};
 use rand::rngs::OsRng; // For secure random salt generation
 use rpassword::prompt_password;
+use std::fs;
+
+enum EncryptionAlgorithm {
+    AES256GCM,
+    ChaCha20Poly1305,
+}
 
 fn derive_key(passphrase: &str, salt: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
     let salt = SaltString::from_b64(salt.trim_end_matches('=')).map_err(|e| {
@@ -63,6 +68,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .value_name("OUTPUT")
                         .help("Output file path (optional)")
                         .action(ArgAction::Set),
+                )
+                .arg(
+                    Arg::new("algorithm")
+                        .long("algorithm")
+                        .short('a')
+                        .value_name("ALGORITHM")
+                        .help("Encryption algorithm to use (AES256GCM or ChaCha20Poly1305)")
+                        .action(ArgAction::Set)
+                        .default_value("AES256GCM"),
                 ),
         )
         .subcommand(
@@ -84,6 +98,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .value_name("OUTPUT")
                         .help("Output file path (optional)")
                         .action(ArgAction::Set),
+                )
+                .arg(
+                    Arg::new("algorithm")
+                        .long("algorithm")
+                        .short('a')
+                        .value_name("ALGORITHM")
+                        .help("Encryption algorithm to use (AES256GCM or ChaCha20Poly1305)")
+                        .action(ArgAction::Set)
+                        .default_value("AES256GCM"),
                 ),
         )
         .subcommand(
@@ -103,6 +126,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match matches.subcommand() {
         Some(("encrypt", sub_matches)) => {
+            let algorithm = match sub_matches
+                .get_one::<String>("algorithm")
+                .map(|s| s.as_str())
+            {
+                Some("AES256GCM") => EncryptionAlgorithm::AES256GCM,
+                Some("ChaCha20Poly1305") => EncryptionAlgorithm::ChaCha20Poly1305,
+                _ => {
+                    eprintln!(
+                        "Invalid algorithm. Please choose between AES256GCM or ChaCha20Poly1305."
+                    );
+                    return Ok(());
+                }
+            };
+
             let input = sub_matches.get_one::<String>("input").unwrap();
             let output = sub_matches
                 .get_one::<String>("output")
@@ -112,12 +149,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let salt = SaltString::generate(&mut OsRng).to_string();
             let key = derive_key(&passphrase, &salt)?;
 
-            match encrypt_file(input, &output, &key, &salt) {
+            match encrypt_file(input, &output, &key, &salt, &algorithm) {
                 Ok(_) => println!("File encrypted successfully: {}", output),
                 Err(e) => eprintln!("Error encrypting file: {}", e),
             }
         }
         Some(("decrypt", sub_matches)) => {
+            let algorithm = match sub_matches
+                .get_one::<String>("algorithm")
+                .map(|s| s.as_str())
+            {
+                Some("AES256GCM") => EncryptionAlgorithm::AES256GCM,
+                Some("ChaCha20Poly1305") => EncryptionAlgorithm::ChaCha20Poly1305,
+                _ => {
+                    eprintln!(
+                        "Invalid algorithm. Please choose between AES256GCM or ChaCha20Poly1305."
+                    );
+                    return Ok(());
+                }
+            };
+
             let input = sub_matches.get_one::<String>("input").unwrap();
             let output = sub_matches
                 .get_one::<String>("output")
@@ -125,7 +176,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|| format!("{}.dec", input));
             let passphrase = prompt_password("Enter passphrase: ").unwrap();
 
-            match decrypt_file(input, &output, &passphrase) {
+            match decrypt_file(input, &output, &passphrase, &algorithm) {
                 Ok(_) => println!("File decrypted successfully: {}", output),
                 Err(e) => eprintln!("Error decrypting file: {}", e),
             }
@@ -147,17 +198,35 @@ fn encrypt_file(
     output_path: &str,
     key: &[u8],
     salt: &str,
+    algorithm: &EncryptionAlgorithm,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let plaintext = fs::read(input_path)?;
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96-bit unique nonce
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
-    let ciphertext = cipher
-        .encrypt(&nonce, plaintext.as_ref())
-        .map_err(|_| "Encryption failed")?;
+    let nonce = match algorithm {
+        EncryptionAlgorithm::AES256GCM => Aes256Gcm::generate_nonce(&mut OsRng),
+        EncryptionAlgorithm::ChaCha20Poly1305 => {
+            chacha20poly1305::ChaCha20Poly1305::generate_nonce(&mut OsRng)
+        }
+    };
+    let ciphertext = match algorithm {
+        EncryptionAlgorithm::AES256GCM => {
+            let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+            cipher
+                .encrypt(&nonce, plaintext.as_ref())
+                .map_err(|_| "Encryption failed")?
+        }
+        EncryptionAlgorithm::ChaCha20Poly1305 => {
+            let cipher = chacha20poly1305::ChaCha20Poly1305::new(Key::<
+                chacha20poly1305::ChaCha20Poly1305,
+            >::from_slice(key));
+            cipher
+                .encrypt(&nonce, plaintext.as_ref())
+                .map_err(|_| "Encryption failed")?
+        }
+    };
 
     let mut output_data = Vec::new();
-    output_data.extend_from_slice(&nonce); // Store nonce at the beginning
-    output_data.extend_from_slice(salt.trim_end_matches('=').as_bytes()); // Store salt without padding
+    output_data.extend_from_slice(&nonce);
+    output_data.extend_from_slice(salt.trim_end_matches('=').as_bytes());
     output_data.extend_from_slice(&ciphertext);
 
     fs::write(output_path, output_data)?;
@@ -169,6 +238,7 @@ fn decrypt_file(
     input_path: &str,
     output_path: &str,
     passphrase: &str,
+    algorithm: &EncryptionAlgorithm,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let salt_len: usize = 22; // Length of base64 encoded salt without padding
     let encrypted_data = fs::read(input_path)?;
@@ -178,10 +248,22 @@ fn decrypt_file(
     let salt_str = std::str::from_utf8(salt)?;
     let key = derive_key(passphrase, salt_str)?;
 
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
-    let plaintext = cipher
-        .decrypt(Nonce::from_slice(nonce), ciphertext)
-        .map_err(|_| "Decryption failed")?;
+    let plaintext = match algorithm {
+        EncryptionAlgorithm::AES256GCM => {
+            let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
+            cipher
+                .decrypt(Nonce::from_slice(nonce), ciphertext)
+                .map_err(|_| "Decryption failed")?
+        }
+        EncryptionAlgorithm::ChaCha20Poly1305 => {
+            let cipher = chacha20poly1305::ChaCha20Poly1305::new(Key::<
+                chacha20poly1305::ChaCha20Poly1305,
+            >::from_slice(&key));
+            cipher
+                .decrypt(Nonce::from_slice(nonce), ciphertext)
+                .map_err(|_| "Decryption failed")?
+        }
+    };
 
     fs::write(output_path, plaintext)?;
 
