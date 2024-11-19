@@ -8,11 +8,23 @@ use rand::rngs::OsRng; // For secure random salt generation
 use rpassword::prompt_password;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::fs::OpenOptions;
+use std::io::{Read, Write};
+use std::path::Path;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Metadata {
     filename: String,
     size: usize,
+    algorithm: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct WalEntry {
+    operation: String,
+    input_path: String,
+    output_path: String,
+    salt: String,
     algorithm: String,
 }
 
@@ -59,6 +71,8 @@ fn derive_key(passphrase: &str, salt: &str) -> Result<[u8; 32], Box<dyn std::err
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    recover_from_wal()?;
+
     let matches = Command::new("Secure CLI")
         .version("0.1.0")
         .about("File Encryption and Decryption Tool")
@@ -229,6 +243,50 @@ fn show_metadata(input_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn write_wal_entry(entry: &WalEntry) -> Result<(), Box<dyn std::error::Error>> {
+    let wal_path = "secure_cli.wal";
+    let mut wal = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(wal_path)?;
+
+    wal.write_all(&serde_json::to_vec(&entry)?)?;
+    wal.write_all(b"\n")?;
+    wal.flush()?;
+    println!("WAL entry written: {:?}", entry);
+
+    Ok(())
+}
+
+fn recover_from_wal() -> Result<(), Box<dyn std::error::Error>> {
+    let wal_path = "secure_cli.wal";
+
+    if !std::path::Path::new(wal_path).exists() {
+        return Ok(());
+    }
+
+    let mut wal = OpenOptions::new().read(true).open(wal_path)?;
+    let mut wal_data = String::new();
+    wal.read_to_string(&mut wal_data)?;
+
+    let entries: Vec<WalEntry> = wal_data
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+
+    for entry in entries {
+        println!("Recovering operation: {:?}", entry);
+        // Handle recovery logic based on operation type
+        // For this example, we'll just print the operation
+    }
+
+    // Clean up the WAL after recovery
+    std::fs::remove_file(wal_path)?;
+    println!("WAL entry cleaned up after recovery");
+
+    Ok(())
+}
+
 fn encrypt_file(
     input_path: &str,
     output_path: &str,
@@ -236,19 +294,27 @@ fn encrypt_file(
     salt: &str,
     algorithm: &EncryptionAlgorithm,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let wal_entry = WalEntry {
+        operation: "encrypt".to_string(),
+        input_path: input_path.to_string(),
+        output_path: output_path.to_string(),
+        salt: salt.to_string(),
+        algorithm: match algorithm {
+            EncryptionAlgorithm::AES256GCM => "AES256GCM",
+            EncryptionAlgorithm::ChaCha20Poly1305 => "ChaCha20Poly1305",
+        }
+        .to_string(),
+    };
+
+    write_wal_entry(&wal_entry)?;
+
     let plaintext = fs::read(input_path)?;
-    println!(
-        "Read plaintext from {}: {:?}",
-        input_path,
-        &plaintext[..std::cmp::min(20, plaintext.len())]
-    ); // Print first 20 bytes
     let nonce = match algorithm {
         EncryptionAlgorithm::AES256GCM => Aes256Gcm::generate_nonce(&mut OsRng),
         EncryptionAlgorithm::ChaCha20Poly1305 => {
             chacha20poly1305::ChaCha20Poly1305::generate_nonce(&mut OsRng)
         }
     };
-    println!("Generated nonce: {:?}", nonce);
     let ciphertext = match algorithm {
         EncryptionAlgorithm::AES256GCM => {
             let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
@@ -265,14 +331,10 @@ fn encrypt_file(
                 .map_err(|_| "Encryption failed")?
         }
     };
-    println!(
-        "Encrypted ciphertext: {:?}",
-        &ciphertext[..std::cmp::min(20, ciphertext.len())]
-    ); // Print first 20 bytes
 
     let metadata = Metadata {
         filename: String::from(input_path),
-        size: plaintext.len() as usize,
+        size: plaintext.len(),
         algorithm: match algorithm {
             EncryptionAlgorithm::AES256GCM => "AES256GCM",
             EncryptionAlgorithm::ChaCha20Poly1305 => "ChaCha20Poly1305",
@@ -281,18 +343,18 @@ fn encrypt_file(
     };
 
     let metadata_json = serde_json::to_string(&metadata)?;
-    println!("Metadata JSON: {}", metadata_json);
-
     let mut output_data = Vec::new();
     output_data.extend_from_slice(&nonce);
     output_data.extend_from_slice(salt.trim_end_matches('=').as_bytes());
     output_data.extend_from_slice(metadata_json.as_bytes());
     output_data.push(0); // Null separator between metadata and ciphertext
     output_data.extend_from_slice(&ciphertext);
-    println!("Final output data length: {}", output_data.len());
 
     fs::write(output_path, output_data)?;
-    println!("Data written to file: {}", output_path);
+
+    // Clean up WAL entry after successful operation
+    std::fs::remove_file("secure_cli.wal")?;
+    println!("WAL entry cleaned up");
 
     Ok(())
 }
@@ -303,39 +365,33 @@ fn decrypt_file(
     passphrase: &str,
     algorithm: &EncryptionAlgorithm,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let wal_entry = WalEntry {
+        operation: "decrypt".to_string(),
+        input_path: input_path.to_string(),
+        output_path: output_path.to_string(),
+        salt: String::new(), // Salt will be extracted from the file
+        algorithm: match algorithm {
+            EncryptionAlgorithm::AES256GCM => "AES256GCM",
+            EncryptionAlgorithm::ChaCha20Poly1305 => "ChaCha20Poly1305",
+        }
+        .to_string(),
+    };
+
+    write_wal_entry(&wal_entry)?;
+
     let salt_len: usize = 22; // Length of base64 encoded salt without padding
-    println!("Decrypting file: {}", input_path);
-
     let encrypted_data = fs::read(input_path)?;
-    println!(
-        "Read encrypted data from {}: {:?}",
-        input_path,
-        &encrypted_data[..std::cmp::min(20, encrypted_data.len())]
-    ); // Print first 20 bytes
-
     let (nonce, rest) = encrypted_data.split_at(12); // 96-bit nonce
-    println!("Extracted nonce: {:?}", nonce);
-
     let (salt, rest) = rest.split_at(salt_len);
-    println!("Extracted salt: {:?}", salt);
-
     let metadata_end = rest
         .iter()
         .position(|&b| b == 0)
         .ok_or("Metadata not found")?;
     let metadata_json = &rest[..metadata_end];
     let ciphertext = &rest[(metadata_end + 1)..]; // Skip null separator
-    println!("Extracted metadata JSON: {:?}", metadata_json);
-    println!(
-        "Extracted ciphertext: {:?}",
-        &ciphertext[..std::cmp::min(20, ciphertext.len())]
-    ); // Print first 20 bytes
 
     let salt_str = std::str::from_utf8(salt)?;
-    println!("Salt string: {}", salt_str);
-
     let key = derive_key(passphrase, salt_str)?;
-    println!("Derived key: {:?}", key);
 
     let plaintext = match algorithm {
         EncryptionAlgorithm::AES256GCM => {
@@ -353,13 +409,12 @@ fn decrypt_file(
                 .map_err(|_| "Decryption failed")?
         }
     };
-    println!(
-        "Decrypted plaintext: {:?}",
-        &plaintext[..std::cmp::min(20, plaintext.len())]
-    ); // Print first 20 bytes
 
     fs::write(output_path, &plaintext)?;
-    println!("Decrypted data written to file: {}", output_path);
+
+    // Clean up WAL entry after successful operation
+    std::fs::remove_file("secure_cli.wal")?;
+    println!("WAL entry cleaned up");
 
     Ok(())
 }
