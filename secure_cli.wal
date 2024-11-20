@@ -1,1 +1,0 @@
-{"operation":"decrypt","input_path":"file_enc.enc","output_path":"file_dec.txt","salt":"","algorithm":"AES256GCM"}

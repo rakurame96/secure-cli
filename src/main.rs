@@ -12,27 +12,50 @@ use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::path::Path;
 
+/// Metadata structure for encrypted files
 #[derive(Serialize, Deserialize, Debug)]
 struct Metadata {
+    /// Original filename
     filename: String,
+    /// File size in bytes
     size: usize,
+    /// Encryption algorithm used
     algorithm: String,
 }
 
+/// Write-Ahead Logging (WAL) entry structure
 #[derive(Serialize, Deserialize, Debug)]
 struct WalEntry {
+    /// Operation type (e.g., encrypt, decrypt)
     operation: String,
+    /// Input file path
     input_path: String,
+    /// Output file path
     output_path: String,
+    /// Salt used for key derivation
     salt: String,
+    /// Encryption algorithm used
     algorithm: String,
 }
 
+/// Supported encryption algorithms
 enum EncryptionAlgorithm {
+    /// AES256GCM encryption algorithm
     AES256GCM,
+    /// ChaCha20Poly1305 encryption algorithm
     ChaCha20Poly1305,
 }
 
+/// Derives a 256-bit key from a passphrase and salt using Argon2
+///
+/// # Arguments
+///
+/// * `passphrase` - The passphrase to derive the key from
+/// * `salt` - The salt to use for key derivation
+///
+/// # Returns
+///
+/// A 256-bit key as an array of 32 bytes
 fn derive_key(passphrase: &str, salt: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
     println!(
         "Deriving key with passphrase: {} and salt: {}",
@@ -70,6 +93,12 @@ fn derive_key(passphrase: &str, salt: &str) -> Result<[u8; 32], Box<dyn std::err
     Ok(key)
 }
 
+
+/// Entry point of the Secure CLI Tool.
+///
+/// This function sets up the command-line interface, processes commands,
+/// and invokes the appropriate functions for encryption, decryption, and metadata display.
+/// It also performs recovery from Write-Ahead Logging (WAL) to ensure data integrity.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     recover_from_wal()?;
 
@@ -228,6 +257,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Shows the metadata of an encrypted file.
+///
+/// This function reads the encrypted file, extracts the metadata, and displays it
+/// without decrypting the file contents.
+///
+/// # Arguments
+///
+/// * `input_path` - A string slice that holds the path of the encrypted file
+///
+/// # Returns
+///
+/// This function returns a `Result` indicating success or failure.
 fn show_metadata(input_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let encrypted_data = fs::read(input_path)?;
     let (_, rest) = encrypted_data.split_at(12 + 22); // Skip nonce and salt
@@ -243,6 +284,15 @@ fn show_metadata(input_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Writes a WAL entry to the WAL file
+///
+/// # Arguments
+///
+/// * `entry` - The WAL entry to write
+///
+/// # Returns
+///
+/// Result indicating success or failure
 fn write_wal_entry(entry: &WalEntry) -> Result<(), Box<dyn std::error::Error>> {
     let wal_path = "secure_cli.wal";
     let mut wal = OpenOptions::new()
@@ -258,6 +308,14 @@ fn write_wal_entry(entry: &WalEntry) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Recovers from Write-Ahead Logging (WAL).
+///
+/// This function reads the WAL file to identify incomplete operations due to a crash or failure.
+/// It then handles these operations based on their type (encryption or decryption).
+///
+/// # Returns
+///
+/// This function returns a `Result` indicating success or failure.
 fn recover_from_wal() -> Result<(), Box<dyn std::error::Error>> {
     let wal_path = "secure_cli.wal";
 
@@ -287,6 +345,19 @@ fn recover_from_wal() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Encrypts a file using the specified encryption algorithm
+///
+/// # Arguments
+///
+/// * `input_path` - Path to the input file
+/// * `output_path` - Path to the output encrypted file
+/// * `key` - Encryption key
+/// * `salt` - Salt used for key derivation
+/// * `algorithm` - Encryption algorithm to use
+///
+/// # Returns
+///
+/// Result indicating success or failure
 fn encrypt_file(
     input_path: &str,
     output_path: &str,
@@ -359,6 +430,18 @@ fn encrypt_file(
     Ok(())
 }
 
+/// Decrypts a file using the specified encryption algorithm
+///
+/// # Arguments
+///
+/// * `input_path` - Path to the input encrypted file
+/// * `output_path` - Path to the output decrypted file
+/// * `passphrase` - Passphrase used for key derivation
+/// * `algorithm` - Encryption algorithm used for encryption
+///
+/// # Returns
+///
+/// Result indicating success or failure
 fn decrypt_file(
     input_path: &str,
     output_path: &str,
