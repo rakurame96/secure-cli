@@ -46,6 +46,10 @@ cargo run -- show --input <INPUT_FILE>
 ```
 - `<INPUT_FILE>`: Path to the encrypted file
 
+## Problem Statement
+- [Encryption Tool - Google Docs Link](https://docs.google.com/document/d/1_mULXR9q8rWzeSYD2MjIqcgM0BcuGiJHRfBKzndBJoQ/edit?usp=drivesdk)
+- [Encryption Tool - Pdf Document](/assets/Encryption%20tool.pdf)
+
 ## Contributing
 
 Contributions are welcome! Please submit a pull request or open an issue to discuss your changes.
