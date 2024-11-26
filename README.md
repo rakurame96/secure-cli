@@ -50,6 +50,13 @@ cargo run -- show --input <INPUT_FILE>
 - [Encryption Tool - Google Docs Link](https://docs.google.com/document/d/1_mULXR9q8rWzeSYD2MjIqcgM0BcuGiJHRfBKzndBJoQ/edit?usp=drivesdk)
 - [Encryption Tool - Pdf Document](/assets/Encryption%20tool.pdf)
 
+## Further Improvements
+- [ ] metadata is not encrypted
+- [ ] no recovery from wal?
+- [ ] you are encrypting the whole content as one message
+- [ ] wal doesn't have the content to process, but just some pending operation info, it would have been the same like running the app again
+- [ ] no encrypt in-place
+
 ## Contributing
 
 Contributions are welcome! Please submit a pull request or open an issue to discuss your changes.
